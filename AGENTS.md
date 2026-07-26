@@ -22,7 +22,7 @@ vibe-usage/
 │   │   ├── opencode.js        # SQLite (via sqlite.js), legacy JSON fallback
 │   │   ├── openclaw.js
 │   │   ├── qwen-code.js
-│   │   ├── kimi-code.js
+│   │   ├── kimi-code.js          # Both stores parsed+merged: ~/.kimi-code (root via $KIMI_CODE_HOME) + legacy ~/.kimi
 │   │   ├── amp.js
 │   │   ├── droid.js
 │   │   ├── antigravity-db.js  # Offline SQLite + protobuf reader for App 2.0 / agy CLI
@@ -137,7 +137,7 @@ node -e "import('./src/parsers/<tool-id>.js').then(m => m.parse()).then(r => con
 Test hooks (env vars honored at module load, set them before importing):
 - `VIBE_USAGE_STATE_DIR` / `VIBE_USAGE_CONFIG_DIR` — redirect `state.js` / `config.js` away from the real `~/.vibe-usage` (used by `test/state.test.js`, `test/reset.test.js`)
 - Codex cache controls: `VIBE_USAGE_CACHE_DIR` redirects cache writes, `VIBE_USAGE_CODEX_CACHE=0` disables the optimization, `VIBE_USAGE_CODEX_WORK_BUDGET_MS` overrides the non-interactive build budget, and `VIBE_USAGE_CODEX_AUDIT_INTERVAL_MS` / `VIBE_USAGE_CODEX_AUDIT_MAX_BYTES` override rolling-audit bounds
-- Per-parser fixtures: `CODEX_HOME`, `VIBE_USAGE_GROK_SESSIONS`, `VIBE_USAGE_KIMI_CODE_DIR`, `VIBE_USAGE_KIMI_DIR`, `VIBE_USAGE_TRAE_CLI_SESSIONS`, `VIBE_USAGE_KIRO_LEGACY_TOKENS`
+- Per-parser fixtures: `CODEX_HOME`, `VIBE_USAGE_GROK_SESSIONS`, `VIBE_USAGE_KIMI_CODE_DIR`, `VIBE_USAGE_KIMI_DIR`, `VIBE_USAGE_TRAE_CLI_SESSIONS`, `VIBE_USAGE_KIRO_LEGACY_TOKENS`. The Kimi Code parser resolves its data root as `VIBE_USAGE_KIMI_CODE_DIR` → `KIMI_CODE_HOME` (matching the CLI) → `~/.kimi-code`, and always merges the legacy `~/.kimi` store instead of either/or (`kimi migrate` drops usage records, so no double-count)
 - Claude fixtures: `VIBE_USAGE_CLAUDE_DIRS` replaces normal Claude root discovery with a `path.delimiter`-separated root list. The production parser scans `~/.claude`, `$CLAUDE_CONFIG_DIR`, and data-bearing `~/.claude-*` profiles, streams each JSONL file to its captured size, keeps the most complete duplicate session/UUID, and returns `skipped` with warnings after any read failure so incremental state is not pruned.
 
 ## Versioning

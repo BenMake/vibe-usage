@@ -27,14 +27,25 @@ import { aggregateToBuckets, extractSessions } from './index.js';
  *    with a different envelope (StatusUpdate.payload.token_usage, float-second
  *    `timestamp`) and the model in ~/.kimi/config.toml. Kept for users who have
  *    not migrated; see parseLegacyKimi() below.
+ *
+ * Both stores are always parsed and merged. `kimi migrate` translates legacy
+ * context.jsonl into the new wire format but DROPS the `_usage` records, so
+ * historical token usage only ever exists in the legacy store — parsing both
+ * cannot double-count, while skipping legacy whenever ~/.kimi-code has any
+ * session silently loses a migrated user's entire history.
  */
 
 // ---------------------------------------------------------------------------
 // Current format: ~/.kimi-code
 // ---------------------------------------------------------------------------
 
-// VIBE_USAGE_KIMI_CODE_DIR overrides the root (test hook).
-const KIMI_CODE_DIR = process.env.VIBE_USAGE_KIMI_CODE_DIR?.trim() || join(homedir(), '.kimi-code');
+// VIBE_USAGE_KIMI_CODE_DIR overrides the root (test hook). Otherwise resolve
+// the data root the same way the CLI itself does: $KIMI_CODE_HOME, then
+// ~/.kimi-code. Ignoring KIMI_CODE_HOME means users with a custom home get
+// zero usage parsed.
+const KIMI_CODE_DIR = process.env.VIBE_USAGE_KIMI_CODE_DIR?.trim()
+  || process.env.KIMI_CODE_HOME?.trim()
+  || join(homedir(), '.kimi-code');
 const KIMI_CODE_SESSIONS_DIR = join(KIMI_CODE_DIR, 'sessions');
 const KIMI_CODE_SESSION_INDEX = join(KIMI_CODE_DIR, 'session_index.jsonl');
 
@@ -362,7 +373,8 @@ function parseLegacyKimi() {
 
       const tokenUsage = payload.token_usage;
       if (!tokenUsage) continue;
-      if (!tokenUsage.input_other && !tokenUsage.output) continue;
+      if (!tokenUsage.input_other && !tokenUsage.output
+        && !tokenUsage.input_cache_read && !tokenUsage.input_cache_creation) continue;
 
       const messageId = payload.message_id;
       if (messageId) {
@@ -370,14 +382,21 @@ function parseLegacyKimi() {
         seenMessageIds.add(messageId);
       }
 
-      const ts = lastTimestamp ? new Date(lastTimestamp) : new Date();
+      // No valid timestamp → skip instead of stamping "now": this parser is
+      // stateless, so a "now" fallback would re-key the same record into a
+      // fresh 30-min bucket on every sync (duplicates).
+      if (!lastTimestamp) continue;
+      const ts = new Date(lastTimestamp);
+      if (isNaN(ts.getTime())) continue;
 
       entries.push({
         source: 'kimi-code',
         model: currentModel,
         project,
         timestamp: ts,
-        inputTokens: tokenUsage.input_other || 0,
+        // Cache creation is billed non-cached input, matching the current
+        // parser and the common bucket model used by the other parsers.
+        inputTokens: (tokenUsage.input_other || 0) + (tokenUsage.input_cache_creation || 0),
         outputTokens: tokenUsage.output || 0,
         cachedInputTokens: tokenUsage.input_cache_read || 0,
         reasoningOutputTokens: 0,
@@ -389,9 +408,13 @@ function parseLegacyKimi() {
 }
 
 export async function parse() {
-  // Prefer the current ~/.kimi-code layout; fall back to legacy ~/.kimi only
-  // when no kimi-code sessions exist, so migrated users aren't double-counted.
+  // Always parse both stores and merge (see the header comment): legacy usage
+  // is never carried into ~/.kimi-code by `kimi migrate`, so a migrated user's
+  // history exists only in ~/.kimi.
   const current = parseKimiCode();
-  if (current) return current;
-  return parseLegacyKimi();
+  const legacy = parseLegacyKimi();
+  return {
+    buckets: [...(current?.buckets ?? []), ...legacy.buckets],
+    sessions: [...(current?.sessions ?? []), ...legacy.sessions],
+  };
 }
