@@ -16,7 +16,6 @@ import { parse as parseDroid } from './droid.js';
 import { parse as parseAntigravity } from './antigravity.js';
 import { parse as parseHermes } from './hermes.js';
 import { parse as parseKiro } from './kiro.js';
-import { parse as parseMimocode } from './mimocode.js';
 import { parse as parsePiCodingAgent } from './pi-coding-agent.js';
 import { parse as parseZcode } from './zcode.js';
 import { parse as parseTraeCli } from './trae-cli.js';
@@ -39,7 +38,6 @@ export const parsers = {
   'trae-cli': parseTraeCli,
   'hermes': parseHermes,
   'kiro': parseKiro,
-  'mimocode': parseMimocode,
   'cline': parseCline,
   'roo-code': parseRooCode,
   'zcode': parseZcode,
