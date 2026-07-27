@@ -56,10 +56,25 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-export function generateSystemdUnit(nodePath, binPath, claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim()) {
-  const claudeEnvironment = claudeConfigDir
-    ? `Environment="CLAUDE_CONFIG_DIR=${escapeSystemdEnvironment(claudeConfigDir)}"\n`
-    : '';
+const PRESERVED_SERVICE_ENV = ['MIMOCODE_HOME', 'MIMOCODE_DB', 'XDG_DATA_HOME'];
+
+function serviceEnvironment(claudeConfigDir, env) {
+  const values = {
+    CLAUDE_CONFIG_DIR: claudeConfigDir,
+    ...Object.fromEntries(PRESERVED_SERVICE_ENV.map(key => [key, env[key]?.trim()])),
+  };
+  return Object.entries(values).filter(([, value]) => value);
+}
+
+export function generateSystemdUnit(
+  nodePath,
+  binPath,
+  claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim(),
+  env = process.env,
+) {
+  const environment = serviceEnvironment(claudeConfigDir, env)
+    .map(([key, value]) => `Environment="${key}=${escapeSystemdEnvironment(value)}"\n`)
+    .join('');
   return `[Unit]
 Description=VibeCafe Usage Tracker
 After=network.target
@@ -70,18 +85,23 @@ ExecStart=${nodePath} ${binPath} daemon
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
-${claudeEnvironment}WorkingDirectory=${homedir()}
+${environment}WorkingDirectory=${homedir()}
 
 [Install]
 WantedBy=default.target
 `;
 }
 
-export function generateLaunchdPlist(nodePath, binPath, claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim()) {
+export function generateLaunchdPlist(
+  nodePath,
+  binPath,
+  claudeConfigDir = process.env.CLAUDE_CONFIG_DIR?.trim(),
+  env = process.env,
+) {
   const logDir = join(homedir(), '.vibe-usage');
-  const claudeEnvironment = claudeConfigDir
-    ? `        <key>CLAUDE_CONFIG_DIR</key>\n        <string>${escapeXml(claudeConfigDir)}</string>\n`
-    : '';
+  const environment = serviceEnvironment(claudeConfigDir, env)
+    .map(([key, value]) => `        <key>${key}</key>\n        <string>${escapeXml(value)}</string>\n`)
+    .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -108,7 +128,7 @@ export function generateLaunchdPlist(nodePath, binPath, claudeConfigDir = proces
     <dict>
         <key>NODE_ENV</key>
         <string>production</string>
-${claudeEnvironment}    </dict>
+${environment}    </dict>
 </dict>
 </plist>
 `;
