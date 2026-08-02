@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { findClaudeCodeDataDirs } from './claude-roots.js';
+import { codexSessionDirs, resolveCodexHomes } from './codex-roots.js';
 
 function getCursorStateDbPath() {
   const rel = join('User', 'globalStorage', 'state.vscdb');
@@ -84,11 +85,10 @@ function findOpenclawDataDirs() {
 // Codex keeps live sessions in ~/.codex/sessions and moves completed ones to
 // ~/.codex/archived_sessions. Detect Codex if either dir exists, so a user
 // whose sessions have all been archived is still recognized.
-function findCodexDataDirs() {
-  return [
-    join(homedir(), '.codex', 'sessions'),
-    join(homedir(), '.codex', 'archived_sessions'),
-  ].filter(existsSync);
+export function findCodexDataDirs(codexExtraHome) {
+  return resolveCodexHomes(codexExtraHome)
+    .flatMap(codexSessionDirs)
+    .filter(existsSync);
 }
 
 // Kimi Code moved its store from ~/.kimi to ~/.kimi-code; recognize either so
@@ -156,6 +156,24 @@ export function findGrokDataDirs() {
   return [join(getGrokHome(), 'sessions')].filter(existsSync);
 }
 
+export function getDimAgentDbPath() {
+  const override = process.env.VIBE_USAGE_DIMAGENT_DB?.trim();
+  if (override) return resolve(override);
+
+  const explicitHome = process.env.DIMCODE_HOME?.trim();
+  if (explicitHome) return join(resolve(explicitHome), 'dimcode.sqlite');
+
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  const home = xdgConfigHome
+    ? resolve(xdgConfigHome, '.dimcode', 'v2')
+    : join(homedir(), '.dimcode', 'v2');
+  return join(home, 'dimcode.sqlite');
+}
+
+export function findDimAgentDataDirs() {
+  return [getDimAgentDbPath()].filter(existsSync);
+}
+
 export const TOOLS = [
   {
     name: 'Claude Code',
@@ -167,7 +185,7 @@ export const TOOLS = [
     name: 'Codex CLI',
     id: 'codex',
     dataDir: join(homedir(), '.codex', 'sessions'),
-    detectDataDirs: findCodexDataDirs,
+    detectDataDirs: ({ codexExtraHome } = {}) => findCodexDataDirs(codexExtraHome),
   },
   {
     name: 'Grok',
@@ -184,6 +202,12 @@ export const TOOLS = [
     name: 'Cursor',
     id: 'cursor',
     dataDir: getCursorStateDbPath(),
+  },
+  {
+    name: 'DimAgent',
+    id: 'dimagent',
+    dataDir: getDimAgentDbPath(),
+    detectDataDirs: findDimAgentDataDirs,
   },
   {
     name: 'Gemini CLI',
@@ -276,9 +300,9 @@ export const TOOLS = [
   },
 ];
 
-export function detectInstalledTools() {
+export function detectInstalledTools(options = {}) {
   return TOOLS.filter(t => {
-    if (t.detectDataDirs) return t.detectDataDirs().length > 0;
+    if (t.detectDataDirs) return t.detectDataDirs(options).length > 0;
     return existsSync(t.dataDir);
   });
 }
