@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { findClaudeCodeDataDirs } from './claude-roots.js';
 import { codexSessionDirs, resolveCodexHomes } from './codex-roots.js';
@@ -98,6 +98,17 @@ function findKimiCodeDataDirs() {
     join(homedir(), '.kimi-code', 'sessions'),
     join(homedir(), '.kimi', 'sessions'),
   ].filter(existsSync);
+}
+
+export function getMimocodeDbPath(env = process.env) {
+  if (env.MIMOCODE_HOME && !isAbsolute(env.MIMOCODE_HOME)) {
+    throw new Error(`MIMOCODE_HOME must be an absolute path, got: ${JSON.stringify(env.MIMOCODE_HOME)}`);
+  }
+  const dataDir = env.MIMOCODE_HOME
+    ? join(env.MIMOCODE_HOME, 'data')
+    : join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'mimocode');
+  if (!env.MIMOCODE_DB) return join(dataDir, 'mimocode.db');
+  return isAbsolute(env.MIMOCODE_DB) ? env.MIMOCODE_DB : join(dataDir, env.MIMOCODE_DB);
 }
 
 function findAntigravityDataDirs() {
@@ -231,6 +242,12 @@ export const TOOLS = [
     // path. The parser reads whichever exists (preferring ~/.kimi-code).
     dataDir: join(homedir(), '.kimi-code', 'sessions'),
     detectDataDirs: findKimiCodeDataDirs,
+  },
+  {
+    name: 'MiMoCode',
+    id: 'mimocode',
+    dataDir: join(homedir(), '.local', 'share', 'mimocode', 'mimocode.db'),
+    detectDataDirs: () => [getMimocodeDbPath()].filter(existsSync),
   },
   {
     name: 'Amp',
